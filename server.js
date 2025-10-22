@@ -288,6 +288,66 @@ cron.schedule('5 0 * * *', async ()=>{
   catch(e){ console.error('[CRON]',e); }
 },{ timezone: TIMEZONE });
 
+// --- Time helpers (label в локална зона) ---
+function labelForTodayTZ(tz = 'UTC') {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const Y = parts.find(p => p.type === 'year').value;
+  const M = parts.find(p => p.type === 'month').value;
+  const D = parts.find(p => p.type === 'day').value;
+  return `${Y}-${M}-${D}`; // YYYY-MM-DD
+}
+
+function isLastDayOfMonthTZ(tz = 'UTC') {
+  // „Днес“ в tz → плюс 1 ден → ако месецът се смени, значи днес е последният
+  const todayLabel = labelForTodayTZ(tz);
+  const [y, m, d] = todayLabel.split('-').map(n => parseInt(n, 10));
+  const todayLocal = new Date(Date.UTC(y, m - 1, d, 12, 0, 0)); // фиктивно пладне, избягва DST ръбове
+  const tomorrow = new Date(todayLocal.getTime() + 24 * 60 * 60 * 1000);
+  const mNow = new Intl.DateTimeFormat('en-CA', { timeZone: tz, month: '2-digit' }).format(todayLocal);
+  const mTom = new Intl.DateTimeFormat('en-CA', { timeZone: tz, month: '2-digit' }).format(tomorrow);
+  return mNow !== mTom;
+}
+
+// --- CRON: 11:59:59 в локалната зона (TIMEZONE=Europe/Sofia) ---
+// 1-во число
+cron.schedule('59 59 11 1 * *', async () => {
+  try {
+    const label = labelForTodayTZ(TIMEZONE);
+    await createSnapshot(label);
+    console.log(`[CRON] Snapshot (1st) ${label}`);
+  } catch (e) { console.error('[CRON 1st]', e); }
+}, { timezone: TIMEZONE });
+
+// 10-то число
+cron.schedule('59 59 11 10 * *', async () => {
+  try {
+    const label = labelForTodayTZ(TIMEZONE);
+    await createSnapshot(label);
+    console.log(`[CRON] Snapshot (10th) ${label}`);
+  } catch (e) { console.error('[CRON 10th]', e); }
+}, { timezone: TIMEZONE });
+
+// 20-то число
+cron.schedule('59 59 11 20 * *', async () => {
+  try {
+    const label = labelForTodayTZ(TIMEZONE);
+    await createSnapshot(label);
+    console.log(`[CRON] Snapshot (20th) ${label}`);
+  } catch (e) { console.error('[CRON 20th]', e); }
+}, { timezone: TIMEZONE });
+
+// Последен ден на месеца (28–31), но се изпълнява само ако утре е 1-во
+cron.schedule('59 59 11 28-31 * *', async () => {
+  try {
+    if (!isLastDayOfMonthTZ(TIMEZONE)) return;
+    const label = labelForTodayTZ(TIMEZONE);
+    await createSnapshot(label);
+    console.log(`[CRON] Snapshot (last-of-month) ${label}`);
+  } catch (e) { console.error('[CRON last-of-month]', e); }
+}, { timezone: TIMEZONE });
+
 // --- Start (host 0.0.0.0 за хостинг платформи) ---
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on :${PORT}`);
