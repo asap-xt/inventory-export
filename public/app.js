@@ -1,53 +1,155 @@
-function toISOFromLocal(dtLocal) {
-// dtLocal is e.g. "2025-10-01T00:00" from <input type="datetime-local">
-if (!dtLocal) return null;
-const d = new Date(dtLocal);
-return d.toISOString();
-}
+const COLUMNS = [
+  "vendor",
+  "vendor_invoice_date",
+  "vendor_invoice_number",
+  "product_title",
+  "product_variant_sku",
+  "unit_cost",
+  "unit_cost_currency",
+  "starting_inventory_qty",
+  "ending_inventory_qty",
+  "units_sold",
+];
 
-async function createSnapshot() {
-const label = document.getElementById('snapshot-date').value || new Date().toISOString().slice(0,10);
-const res = await fetch('/snapshot', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ label }) });
-const data = await res.json();
-alert(data.ok ? `Snapshot saved for ${label}` : `Error: ${data.error}`);
-}
+const tzEl = document.getElementById("tz");
+tzEl.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-document.getElementById('btn-snapshot').addEventListener('click', createSnapshot);
-
-document.getElementById('btn-report').addEventListener('click', async () => {
-const since = toISOFromLocal(document.getElementById('since').value);
-const until = toISOFromLocal(document.getElementById('until').value);
-const startSnapshotLabel = document.getElementById('start-snap').value || undefined;
-const columns = Array.from(document.querySelectorAll('input.col:checked')).map(i => i.value);
-
-const status = document.getElementById('status');
-status.textContent = 'Working…';
-
-const res = await fetch('/report', {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({ since, until, startSnapshotLabel, columns })
+// Build column chips
+const colBar = document.getElementById("columnsBar");
+COLUMNS.forEach((c, i) => {
+  const id = `col_${c}`;
+  const wrap = document.createElement("label");
+  wrap.className = "chip";
+  wrap.innerHTML = `
+    <input type="checkbox" id="${id}" ${i !== 6 ? "checked" : ""}/>
+    <span>${c}</span>
+  `;
+  colBar.appendChild(wrap);
 });
-const data = await res.json();
-if (!data.ok) {
-status.textContent = 'Error';
-alert(data.error || 'Error');
-return;
+
+// Helpers
+function toISODate(d) {
+  if (!d) return "";
+  // accept 01/10/2025, 2025-10-01, etc.
+  const s = d.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;        // YYYY-MM-DD
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {               // DD/MM/YYYY
+    const [dd, mm, yy] = s.split("/");
+    return `${yy}-${mm}-${dd}`;
+  }
+  return s;
+}
+function toISODateTime(s) {
+  // allow "YYYY-MM-DDTHH:mm:ssZ" or "DD/MM/YYYY, HH:mm"
+  if (!s) return "";
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4}),?\s+(\d{2}):(\d{2})$/);
+  if (m) {
+    const [_, dd, mm, yyyy, HH, MM] = m;
+    // assume local tz → convert to UTC Z
+    const dt = new Date(`${yyyy}-${mm}-${dd}T${HH}:${MM}:00`);
+    return new Date(dt.getTime() - dt.getTimezoneOffset() * 60000)
+      .toISOString()
+      .replace(/\.\d+Z$/, "Z");
+  }
+  return s;
 }
 
-status.textContent = `Rows: ${data.rows}`;
-const downloads = document.getElementById('downloads');
-downloads.innerHTML = '';
-const a1 = document.createElement('a'); a1.href = data.csv; a1.textContent = 'Download CSV'; a1.target = '_blank';
-const a2 = document.createElement('a'); a2.href = data.xml; a2.textContent = 'Download XML'; a2.target = '_blank';
-downloads.appendChild(a1); downloads.appendChild(a2);
+// SNAPSHOT
+const snapshotForm = document.getElementById("snapshotForm");
+const snapshotLabel = document.getElementById("snapshotLabel");
+const snapshotResult = document.getElementById("snapshotResult");
+document.getElementById("snapshotToday").onclick = () => {
+  const now = new Date();
+  snapshotLabel.value = now.toISOString().slice(0, 10);
+};
+document.getElementById("snapshotStartOfMonth").onclick = () => {
+  const now = new Date();
+  const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  snapshotLabel.value = first.toISOString().slice(0, 10);
+};
+snapshotForm.onsubmit = async (e) => {
+  e.preventDefault();
+  snapshotResult.textContent = "Working…";
+  const label = toISODate(snapshotLabel.value);
+  const body = label ? { label } : {};
+  const res = await fetch("/snapshot", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json();
+  if (json.ok) {
+    snapshotResult.innerHTML = `✅ Snapshot <code>${json.label}</code> saved (${json.count} variants).`;
+  } else {
+    snapshotResult.innerHTML = `❌ ${json.error || "Error"}`;
+  }
+};
 
-// Render preview table
-const table = document.getElementById('table');
-const cols = columns && columns.length ? columns : ['vendor','vendor_invoice_date','vendor_invoice_number','product_title','product_variant_sku','unit_cost','unit_cost_currency','starting_inventory_qty','ending_inventory_qty','units_sold'];
-const sample = data.sample || [];
+// REPORT
+const reportForm = document.getElementById("reportForm");
+const sinceEl = document.getElementById("since");
+const untilEl = document.getElementById("until");
+const startLabelEl = document.getElementById("startLabel");
+const linksEl = document.getElementById("reportLinks");
+const previewEl = document.getElementById("reportPreview");
 
-const thead = `<thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>`;
-const tbody = `<tbody>${sample.map(r => `<tr>${cols.map(c => `<td>${r[c] ?? ''}</td>`).join('')}</tr>`).join('')}</tbody>`;
-table.innerHTML = thead + tbody;
-});
+// Presets
+document.getElementById("presetLastMonth").onclick = () => {
+  const now = new Date();
+  const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0, 23, 59, 59));
+  sinceEl.value = `${first.toISOString().slice(0,10)}T00:00:00Z`;
+  untilEl.value = `${last.toISOString().slice(0,19)}Z`;
+  startLabelEl.value = first.toISOString().slice(0,10);
+};
+document.getElementById("presetThisMonth").onclick = () => {
+  const now = new Date();
+  const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  sinceEl.value = `${first.toISOString().slice(0,10)}T00:00:00Z`;
+  untilEl.value = new Date().toISOString().slice(0,19) + "Z";
+  startLabelEl.value = first.toISOString().slice(0,10);
+};
+
+reportForm.onsubmit = async (e) => {
+  e.preventDefault();
+  linksEl.textContent = "Working…";
+  previewEl.innerHTML = "";
+
+  const selected = COLUMNS.filter(c => document.getElementById(`col_${c}`).checked);
+  const body = {
+    since: toISODateTime(sinceEl.value),
+    until: toISODateTime(untilEl.value),
+    startSnapshotLabel: toISODate(startLabelEl.value),
+    columns: selected
+  };
+
+  const res = await fetch("/report", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json();
+
+  if (!json.ok) {
+    linksEl.innerHTML = `❌ ${json.error || "Error"}`;
+    return;
+  }
+
+  // links
+  linksEl.innerHTML = `
+    ✅ Rows: <strong>${json.rows}</strong> &nbsp;—&nbsp;
+    <a href="${json.csv}" target="_blank">Download CSV</a> &nbsp;|&nbsp;
+    <a href="${json.xml}" target="_blank">Download XML</a>
+  `;
+
+  // preview table (first 50 rows for speed)
+  const rows = json.sample && json.sample.length ? json.sample : [];
+  if (!rows.length) return;
+
+  const cols = body.columns && body.columns.length ? body.columns : COLUMNS;
+  const thead = `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>`;
+  const tbody = `<tbody>${rows.slice(0,50).map(r=>{
+    return `<tr>${cols.map(c=>`<td>${(r[c] ?? "")}</td>`).join("")}</tr>`;
+  }).join("")}</tbody>`;
+  previewEl.innerHTML = `<div class="table-wrap"><table>${thead}${tbody}</table></div>`;
+};

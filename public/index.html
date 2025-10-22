@@ -1,73 +1,91 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Inventory Report (Custom)</title>
-<style>
-body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; margin: 24px; }
-.card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 24px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
-.row { display: flex; gap: 16px; flex-wrap: wrap; }
-label { font-size: 12px; color: #374151; display:block; margin-bottom: 4px; }
-input[type="datetime-local"], input[type="date"], select { padding: 8px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; }
-.btn { background: #111827; color: white; border: 0; border-radius: 10px; padding: 10px 14px; cursor: pointer; }
-.btn.secondary { background: #4b5563; }
-.btn:disabled { opacity: 0.6; cursor: not-allowed; }
-table { width: 100%; border-collapse: collapse; }
-th, td { border-bottom: 1px solid #f3f4f6; padding: 8px; text-align: left; font-size: 13px; }
-th { background: #f9fafb; position: sticky; top: 0; }
-.chips { display:flex; gap:8px; flex-wrap: wrap; }
-.chip { padding: 6px 8px; background:#f3f4f6; border-radius: 999px; font-size: 12px; }
-.downloads a { margin-right: 12px; }
-</style>
+  <meta charset="utf-8" />
+  <title>Inventory Report (Custom)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="/style.css" rel="stylesheet" />
 </head>
 <body>
-<h1>Inventory Report (Custom)</h1>
+  <header class="app-header">
+    <div class="container">
+      <h1>Inventory Report</h1>
+      <p class="subtitle">Custom, embedded-style tool for snapshots & reports</p>
+    </div>
+  </header>
 
-<div class="card">
-<h3>Generate Snapshot</h3>
-<div class="row">
-<div>
-<label for="snapshot-date">Snapshot label (YYYY-MM-DD)</label>
-<input id="snapshot-date" type="date" />
-</div>
-<div style="align-self:flex-end;">
-<button id="btn-snapshot" class="btn">Create snapshot</button>
-</div>
-</div>
-<p style="font-size:12px;color:#6b7280;">Use a snapshot at the <strong>start</strong> of your reporting period to compute <em>starting inventory</em>.</p>
-</div>
+  <main class="container">
+    <!-- SNAPSHOT -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Generate Snapshot</h2>
+        <p>Use a snapshot at the <strong>start</strong> of your reporting period to compute <em>starting inventory</em>.</p>
+      </div>
+      <div class="card-body">
+        <form id="snapshotForm" class="grid">
+          <label class="field">
+            <span>Snapshot label (YYYY-MM-DD)</span>
+            <input type="text" id="snapshotLabel" placeholder="2025-11-01" />
+          </label>
 
-<div class="card">
-<h3>Generate Report</h3>
-<div class="row">
-<div>
-<label for="since">Since</label>
-<input id="since" type="datetime-local" />
-</div>
-<div>
-<label for="until">Until</label>
-<input id="until" type="datetime-local" />
-</div>
-<div>
-<label for="start-snap">Start snapshot label (optional)</label>
-<input id="start-snap" type="date" placeholder="YYYY-MM-DD" />
-</div>
-</div>
+          <div class="actions">
+            <button type="submit" class="btn primary">Create snapshot</button>
+            <button type="button" id="snapshotToday" class="btn">Today</button>
+            <button type="button" id="snapshotStartOfMonth" class="btn">1st of Month</button>
+          </div>
+        </form>
+        <div id="snapshotResult" class="result"></div>
+      </div>
+    </section>
 
-<div style="margin-top:12px;">
-<label>Columns</label>
-<div class="chips">
-<label class="chip"><input type="checkbox" class="col" value="vendor" checked /> vendor</label>
-<label class="chip"><input type="checkbox" class="col" value="vendor_invoice_date" checked /> vendor_invoice_date</label>
-<label class="chip"><input type="checkbox" class="col" value="vendor_invoice_number" checked /> vendor_invoice_number</label>
-<label class="chip"><input type="checkbox" class="col" value="product_title" checked /> product_title</label>
-<label class="chip"><input type="checkbox" class="col" value="product_variant_sku" checked /> product_variant_sku</label>
-<label class="chip"><input type="checkbox" class="col" value="unit_cost" checked /> unit_cost</label>
-<label class="chip"><input type="checkbox" class="col" value="unit_cost_currency" /> unit_cost_currency</label>
-<label class="chip"><input type="checkbox" class="col" value="starting_inventory_qty" checked /> starting_inventory_qty</label>
-<label class="chip"><input type="checkbox" class="col" value="ending_inventory_qty" checked /> ending_inventory_qty</label>
-<label class="chip"><input type="checkbox" class="col" value="units_sold" checked /> units_sold</label>
-</div>
-</div>
+    <!-- REPORT -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Generate Report</h2>
+        <p>Pick a time range and (optionally) a <em>start snapshot label</em>. Download CSV/XML or preview below.</p>
+      </div>
+      <div class="card-body">
+        <form id="reportForm" class="grid">
+          <label class="field">
+            <span>Since (ISO)</span>
+            <input type="text" id="since" placeholder="2025-10-01T00:00:00Z" />
+          </label>
+          <label class="field">
+            <span>Until (ISO)</span>
+            <input type="text" id="until" placeholder="2025-10-31T23:59:59Z" />
+          </label>
+          <label class="field">
+            <span>Start snapshot label (optional)</span>
+            <input type="text" id="startLabel" placeholder="2025-10-01" />
+          </label>
+
+          <div class="row">
+            <div class="chipbar" id="columnsBar">
+              <!-- chips are created by JS -->
+            </div>
+          </div>
+
+          <div class="actions">
+            <div class="preset">
+              <button type="button" id="presetLastMonth" class="btn subtle">Last month</button>
+              <button type="button" id="presetThisMonth" class="btn subtle">This month</button>
+            </div>
+            <div class="right">
+              <button type="submit" class="btn primary">Generate</button>
+            </div>
+          </div>
+        </form>
+
+        <div id="reportLinks" class="links"></div>
+        <div id="reportPreview" class="table-wrap"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="container footer">
+    <small>Embedded-style UI. Timezone: <code id="tz"></code></small>
+  </footer>
+
+  <script src="/app.js" defer></script>
+</body>
 </html>
