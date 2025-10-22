@@ -79,7 +79,7 @@ async function shopifyGraphQL(query, variables = {}) {
 // --- Queries (UPDATED: InventoryLevel.quantities(names:["AVAILABLE])) ---
 const PRODUCTS_PAGE_QUERY = `
   query ProductsPage($cursor: String) {
-    products(first: 100, after: $cursor) {
+    products(first: 50, after: $cursor) {     # ↓ от 100 на 50
       pageInfo { hasNextPage endCursor }
       edges {
         node {
@@ -88,21 +88,21 @@ const PRODUCTS_PAGE_QUERY = `
           vendor
           vendorInvoiceDate: metafield(namespace: "custom", key: "vendor_invoice_date") { value }
           vendorInvoiceNumber: metafield(namespace: "custom", key: "vendor_invoice_number") { value }
-          variants(first: 100) {
+          variants(first: 50) {                # ↓ от 100 на 50
             edges {
               node {
                 id
                 sku
                 inventoryItem {
                   unitCost { amount currencyCode }
-                  inventoryLevels(first: 100) {
+                  inventoryLevels(first: 50) {  # ↓ от 100 на 50
                     edges {
                       node {
                         quantities(names: ["AVAILABLE"]) {
                           name
                           quantity
                         }
-                        location { id name }
+                        # махаме location { id name } за по-нисък cost
                       }
                     }
                   }
