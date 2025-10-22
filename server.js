@@ -124,8 +124,6 @@ const ORDERS_PAGE_QUERY = `
         node {
           id
           createdAt
-          canceledAt
-          financialStatus
           lineItems(first: 250) {
             edges {
               node {
