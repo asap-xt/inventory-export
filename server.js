@@ -76,7 +76,7 @@ async function shopifyGraphQL(query, variables = {}) {
   return out.data;
 }
 
-// --- Queries (UPDATED: InventoryLevel.quantities(names:[AVAILABLE])) ---
+// --- Queries (UPDATED: InventoryLevel.quantities(names:["AVAILABLE])) ---
 const PRODUCTS_PAGE_QUERY = `
   query ProductsPage($cursor: String) {
     products(first: 100, after: $cursor) {
@@ -98,7 +98,7 @@ const PRODUCTS_PAGE_QUERY = `
                   inventoryLevels(first: 100) {
                     edges {
                       node {
-                        quantities(names: [AVAILABLE]) {
+                        quantities(names: ["AVAILABLE"]) {
                           name
                           quantity
                         }
