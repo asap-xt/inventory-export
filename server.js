@@ -214,14 +214,17 @@ async function fetchAllProductsAndInventory() {
 
 // Units sold (по поръчки в периода)
 async function fetchUnitsSold(sinceISO, untilISO) {
-  // Shopify order search е най-стабилен с чисти дати (YYYY-MM-DD)
+  // търсим по ЧИСТИ дати и ги слагаме в единични кавички
   const toDateOnly = (s) => (s || '').split('T')[0];
 
-  const sinceDate = toDateOnly(sinceISO);
-  const untilDate = toDateOnly(untilISO);
+  const sinceDate = toDateOnly(sinceISO);  // YYYY-MM-DD
+  const untilDate = toDateOnly(untilISO);  // YYYY-MM-DD
 
-  // Пример: created_at:>=2025-10-01 created_at:<=2025-10-31
-  const q = `created_at:>=${sinceDate} created_at:<=${untilDate} financial_status:paid -cancelled_at:*`;
+  // стабилен search syntax:
+  // - дати в '…'
+  // - платени
+  // - изключваме отменените по статус
+  const q = `created_at:>='${sinceDate}' created_at:<='${untilDate}' financial_status:paid -status:cancelled`;
 
   let cursor = null, hasNext = true;
   const byVariant = new Map();
@@ -238,6 +241,7 @@ async function fetchUnitsSold(sinceISO, untilISO) {
         byVariant.set(vId, (byVariant.get(vId) || 0) + (li.quantity || 0));
       }
     }
+
     hasNext = pageInfo.hasNextPage;
     cursor = pageInfo.endCursor;
   }
