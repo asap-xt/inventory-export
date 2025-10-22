@@ -94,6 +94,7 @@ const PRODUCTS_PAGE_QUERY = `
                 id
                 sku
                 inventoryItem {
+		  tracked
                   unitCost { amount currencyCode }
                   inventoryLevels(first: 50) {
                     edges {
@@ -155,6 +156,11 @@ async function fetchAllProductsAndInventory() {
 
       for (const vEdge of p.variants.edges) {
         const v = vEdge.node;
+
+
+        // skip non-tracked items (fees, gift cards, services, etc.)
+        if (v.inventoryItem?.tracked !== true) continue;
+
         const levels = v.inventoryItem?.inventoryLevels?.edges || [];
 
         // UPDATED aggregation using quantities(names:[AVAILABLE])
