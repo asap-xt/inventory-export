@@ -1,4 +1,4 @@
-// server.js — clean, Railway-ready (Node >= 18)
+// server.js — hardened for Railway (Node >= 18), with polyfills & error handlers
 import 'dotenv/config';
 import express from 'express';
 import fs from 'fs';
@@ -7,6 +7,14 @@ import { fileURLToPath } from 'url';
 import cron from 'node-cron';
 import { Parser as Json2CsvParser } from 'json2csv';
 import { create } from 'xmlbuilder2';
+
+// ---- fetch polyfill for Node < 18 (safety) ----
+if (typeof fetch === 'undefined') {
+  // eslint-disable-next-line no-undef
+  const { default: nodeFetch } = await import('node-fetch');
+  // eslint-disable-next-line no-global-assign
+  globalThis.fetch = nodeFetch;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,9 +27,17 @@ const {
   TIMEZONE = 'UTC',
   APP_URL = ''
 } = process.env;
-
-// Railway injects PORT; fall back to 3000 locally
 const PORT = process.env.PORT || 3000;
+
+// Global error handlers so the process doesn't die silently
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+
+console.log('[BOOT] Node', process.version, 'ENV:', process.env.NODE_ENV || 'development');
 
 if (!SHOPIFY_SHOP || !SHOPIFY_ADMIN_TOKEN) {
   console.error('Missing SHOPIFY_SHOP or SHOPIFY_ADMIN_TOKEN env vars.');
@@ -30,6 +46,9 @@ if (!SHOPIFY_SHOP || !SHOPIFY_ADMIN_TOKEN) {
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
+
+// Quick ping as early as possible
+app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // Embed in Shopify Admin via CSP
 app.use((_req, res, next) => {
@@ -62,8 +81,18 @@ async function shopifyGraphQL(query, variables = {}) {
       'X-Shopify-Access-Token': SHOPIFY_ADMIN_TOKEN
     },
     body: JSON.stringify({ query, variables })
+  }).catch((e) => {
+    console.error('[GraphQL fetch error]', e);
+    throw e;
   });
-  const out = await res.json().catch(() => ({}));
+
+  let out = {};
+  try {
+    out = await res.json();
+  } catch (e) {
+    console.error('[GraphQL parse error]', e);
+  }
+
   if (!res.ok) {
     throw new Error(`GraphQL HTTP ${res.status} ${res.statusText}: ${JSON.stringify(out)}`);
   }
@@ -151,6 +180,9 @@ async function fetchAllProductsAndInventory() {
       for (const vEdge of p.variants.edges) {
         const v = vEdge.node;
         const levels = v.inventoryItem?.inventoryLevels?.edges || [];
+        theLoop: {
+          // Sum all locations for endingQty
+        }
         const endingQty = levels.reduce((sum, lev) => sum + (lev.node.available ?? 0), 0);
         const unitCost = v.inventoryItem?.unitCost?.amount ?? null;
         const unitCostCurrency = v.inventoryItem?.unitCost?.currencyCode ?? null;
@@ -282,7 +314,7 @@ function writeXML(rows, filenameBase, columns) {
 }
 
 // ---- Routes ----
-app.get('/health', (_req, res) => res.json({ ok: true }));
+// (health е горе, за да отговаря дори при частични проблеми)
 
 // POST /snapshot  { "label": "YYYY-MM-DD" }
 app.post('/snapshot', async (req, res) => {
