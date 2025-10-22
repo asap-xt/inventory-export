@@ -76,10 +76,10 @@ async function shopifyGraphQL(query, variables = {}) {
   return out.data;
 }
 
-// --- Queries (UPDATED: InventoryLevel.quantities(names:["AVAILABLE])) ---
+// --- Queries (UPDATED: InventoryLevel.quantities(names:["available"])) ---
 const PRODUCTS_PAGE_QUERY = `
-  query ProductsPage($cursor: String) {
-    products(first: 50, after: $cursor) {     # ↓ от 100 на 50
+  query ProductsPage($cursor: String, $qtyNames: [String!]!) {
+    products(first: 50, after: $cursor) {
       pageInfo { hasNextPage endCursor }
       edges {
         node {
@@ -88,21 +88,21 @@ const PRODUCTS_PAGE_QUERY = `
           vendor
           vendorInvoiceDate: metafield(namespace: "custom", key: "vendor_invoice_date") { value }
           vendorInvoiceNumber: metafield(namespace: "custom", key: "vendor_invoice_number") { value }
-          variants(first: 50) {                # ↓ от 100 на 50
+          variants(first: 50) {
             edges {
               node {
                 id
                 sku
                 inventoryItem {
                   unitCost { amount currencyCode }
-                  inventoryLevels(first: 50) {  # ↓ от 100 на 50
+                  inventoryLevels(first: 50) {
                     edges {
                       node {
-                        quantities(names: ["AVAILABLE"]) {
+                        quantities(names: $qtyNames) {
                           name
                           quantity
                         }
-                        # махаме location { id name } за по-нисък cost
+                        # location { id name }  // държим го махнат за по-нисък query cost
                       }
                     }
                   }
@@ -148,7 +148,7 @@ async function fetchAllProductsAndInventory() {
   const rows = [];
 
   while (hasNext) {
-    const data = await shopifyGraphQL(PRODUCTS_PAGE_QUERY, { cursor });
+    const data = await shopifyGraphQL(PRODUCTS_PAGE_QUERY, { cursor, qtyNames: ["available"] });
     const { edges, pageInfo } = data.products;
 
     for (const { node: p } of edges) {
@@ -162,7 +162,7 @@ async function fetchAllProductsAndInventory() {
         // UPDATED aggregation using quantities(names:[AVAILABLE])
         const endingQty = levels.reduce((sum, lev) => {
           const qList = lev.node.quantities || [];
-          const avail = qList.find(q => q.name === 'AVAILABLE');
+          const avail = qList.find(q => q.name === 'available');
           return sum + (avail?.quantity ?? 0);
         }, 0);
 
