@@ -47,55 +47,60 @@ COLUMNS.forEach((c, i) => {
   colBar.appendChild(wrap);
 });
 
-// Helpers
-function toISODate(d) {
-  if (!d) return "";
-  const s = d.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;        // YYYY-MM-DD
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {               // DD/MM/YYYY
-    const [dd, mm, yy] = s.split("/");
-    return `${yy}-${mm}-${dd}`;
-  }
-  return s;
-}
-function toISODateTime(s) {
-  if (!s) return "";
-  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4}),?\s+(\d{2}):(\d{2})$/);
-  if (m) {
-    const [_, dd, mm, yyyy, HH, MM] = m;
-    const dt = new Date(`${yyyy}-${mm}-${dd}T${HH}:${MM}:00`);
-    return new Date(dt.getTime() - dt.getTimezoneOffset() * 60000)
-      .toISOString()
-      .replace(/\.\d+Z$/, "Z");
-  }
-  return s;
+// === Dates helpers ===
+// return "YYYY-MM-DD"
+function toYMD(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
-// SNAPSHOT
+// Build ISO from local date boundaries:
+// start: 00:00:01 local; end: 23:59:59 local (or now if until=today)
+function isoStartOfDayPlusOne(dateYMD) {
+  const [y, m, d] = dateYMD.split("-").map(n => parseInt(n, 10));
+  const dt = new Date(y, m - 1, d, 0, 0, 1); // local 00:00:01
+  return new Date(dt.getTime() - dt.getTimezoneOffset() * 60000)
+    .toISOString()
+    .replace(/\.\d+Z$/, "Z");
+}
+function isoEndOfDayOrNow(dateYMD) {
+  const [y, m, d] = dateYMD.split("-").map(n => parseInt(n, 10));
+  const today = toYMD(new Date());
+  if (dateYMD === today) {
+    // now (UTC)
+    return new Date().toISOString().replace(/\.\d+Z$/, "Z");
+  }
+  const dt = new Date(y, m - 1, d, 23, 59, 59); // local 23:59:59
+  return new Date(dt.getTime() - dt.getTimezoneOffset() * 60000)
+    .toISOString()
+    .replace(/\.\d+Z$/, "Z");
+}
+
+// ===== SNAPSHOT (optional) =====
 const snapshotForm = document.getElementById("snapshotForm");
-const snapshotLabel = document.getElementById("snapshotLabel");
+const snapshotDate = document.getElementById("snapshotDate");
 const snapshotResult = document.getElementById("snapshotResult");
 
 document.getElementById("snapshotToday").onclick = () => {
-  const now = new Date();
-  snapshotLabel.value = now.toISOString().slice(0, 10);
+  snapshotDate.value = toYMD(new Date());
 };
 document.getElementById("snapshotStartOfMonth").onclick = () => {
   const now = new Date();
-  const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  snapshotLabel.value = first.toISOString().slice(0, 10);
+  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  snapshotDate.value = toYMD(first);
 };
 
 snapshotForm.onsubmit = async (e) => {
   e.preventDefault();
   snapshotResult.textContent = "Working…";
-  const label = toISODate(snapshotLabel.value);
-  const body = label ? { label } : {};
+  const label = snapshotDate.value || toYMD(new Date());
   try {
     const res = await fetch("/snapshot", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ label }),
     });
     const json = await res.json();
     if (json.ok) {
@@ -111,11 +116,11 @@ snapshotForm.onsubmit = async (e) => {
   }
 };
 
-// REPORT
+// ===== REPORT =====
 const reportForm = document.getElementById("reportForm");
-const sinceEl = document.getElementById("since");
-const untilEl = document.getElementById("until");
-const startLabelEl = document.getElementById("startLabel");
+const sinceDateEl = document.getElementById("sinceDate");
+const untilDateEl = document.getElementById("untilDate");
+const startLabelDateEl = document.getElementById("startLabelDate");
 const encSel = document.getElementById("encoding");
 const linksEl = document.getElementById("reportLinks");
 const previewEl = document.getElementById("reportPreview");
@@ -123,18 +128,18 @@ const previewEl = document.getElementById("reportPreview");
 // Presets
 document.getElementById("presetLastMonth").onclick = () => {
   const now = new Date();
-  const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-  const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0, 23, 59, 59));
-  sinceEl.value = `${first.toISOString().slice(0,10)}T00:00:00Z`;
-  untilEl.value = `${last.toISOString().slice(0,19)}Z`;
-  startLabelEl.value = first.toISOString().slice(0,10);
+  const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const last = new Date(now.getFullYear(), now.getMonth(), 0);
+  sinceDateEl.value = toYMD(first);
+  untilDateEl.value = toYMD(last);
+  startLabelDateEl.value = toYMD(first);
 };
 document.getElementById("presetThisMonth").onclick = () => {
   const now = new Date();
-  const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  sinceEl.value = `${first.toISOString().slice(0,10)}T00:00:00Z`;
-  untilEl.value = new Date().toISOString().slice(0,19) + "Z";
-  startLabelEl.value = first.toISOString().slice(0,10);
+  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  sinceDateEl.value = toYMD(first);
+  untilDateEl.value = toYMD(now);
+  startLabelDateEl.value = toYMD(first);
 };
 
 reportForm.onsubmit = async (e) => {
@@ -142,11 +147,23 @@ reportForm.onsubmit = async (e) => {
   linksEl.textContent = "Working…";
   previewEl.innerHTML = "";
 
+  const sinceYMD = sinceDateEl.value;
+  const untilYMD = untilDateEl.value;
+  if (!sinceYMD || !untilYMD) {
+    linksEl.textContent = "Please choose both dates.";
+    showToast("Missing dates", "Please choose both since and until.", "error");
+    return;
+  }
+
+  const sinceISO = isoStartOfDayPlusOne(sinceYMD);
+  const untilISO = isoEndOfDayOrNow(untilYMD);
+  const startLabel = startLabelDateEl.value || "";
+
   const selected = COLUMNS.filter(c => document.getElementById(`col_${c}`).checked);
   const body = {
-    since: toISODateTime(sinceEl.value),
-    until: toISODateTime(untilEl.value),
-    startSnapshotLabel: toISODate(startLabelEl.value),
+    since: sinceISO,
+    until: untilISO,
+    startSnapshotLabel: startLabel || undefined,
     columns: selected
   };
 

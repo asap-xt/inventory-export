@@ -15,23 +15,26 @@
   </header>
 
   <main class="container">
-    <!-- SNAPSHOT -->
+    <!-- SNAPSHOT (optional manual) -->
     <section class="card">
       <div class="card-header">
-        <h2>Generate Snapshot</h2>
-        <p>Use a snapshot at the <strong>start</strong> of your reporting period to compute <em>starting inventory</em>.</p>
+        <h2>Manual Snapshot (optional)</h2>
+        <p>
+          Snapshots се правят <strong>автоматично</strong> на 1-во, 10-то, 20-то и последния ден в 11:59:59 (Europe/Sofia).
+          Тук можеш <em>по желание</em> да създадеш snapshot по етикет (YYYY-MM-DD).
+        </p>
       </div>
       <div class="card-body">
         <form id="snapshotForm" class="grid">
           <label class="field">
-            <span>Snapshot label (YYYY-MM-DD)</span>
-            <input type="text" id="snapshotLabel" placeholder="2025-11-01" />
+            <span>Snapshot date</span>
+            <input type="date" id="snapshotDate" />
           </label>
 
           <div class="actions">
-            <button type="submit" class="btn primary">Create snapshot</button>
-            <button type="button" id="snapshotToday" class="btn">Today</button>
-            <button type="button" id="snapshotStartOfMonth" class="btn">1st of Month</button>
+            <button type="submit" class="btn">Create snapshot</button>
+            <button type="button" id="snapshotToday" class="btn subtle">Today</button>
+            <button type="button" id="snapshotStartOfMonth" class="btn subtle">1st of Month</button>
           </div>
         </form>
         <div id="snapshotResult" class="result"></div>
@@ -42,21 +45,24 @@
     <section class="card">
       <div class="card-header">
         <h2>Generate Report</h2>
-        <p>Pick a time range and (optionally) a <em>start snapshot label</em>. Download CSV/XML or preview below.</p>
+        <p>
+          Избери дати <strong>без часове</strong>. Отчетът започва от <em>00:00:01</em> на началната дата и свършва в <em>23:59:59</em> на крайната,
+          а ако крайната е днешна – до момента на генериране.
+        </p>
       </div>
       <div class="card-body">
         <form id="reportForm" class="grid">
           <label class="field">
-            <span>Since (ISO)</span>
-            <input type="text" id="since" placeholder="2025-10-01T00:00:00Z" />
+            <span>Since (date)</span>
+            <input type="date" id="sinceDate" />
           </label>
           <label class="field">
-            <span>Until (ISO)</span>
-            <input type="text" id="until" placeholder="2025-10-31T23:59:59Z" />
+            <span>Until (date)</span>
+            <input type="date" id="untilDate" />
           </label>
           <label class="field">
             <span>Start snapshot label (optional)</span>
-            <input type="text" id="startLabel" placeholder="2025-10-01" />
+            <input type="date" id="startLabelDate" />
           </label>
 
           <div class="row">
