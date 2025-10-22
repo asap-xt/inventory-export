@@ -1,0 +1,10 @@
+# This file is optional here (no OAuth flow). It’s useful if you later adopt Shopify CLI.
+# Populate with your app’s keys if/when you enable OAuth.
+
+name = "Inventory Report (Custom)"
+handle = "inventory-report-custom"
+application_url = "https://your-railway-app.up.railway.app/"
+embedded = true
+
+[access_scopes]
+scopes = "read_products,read_inventory,read_orders,read_locations"

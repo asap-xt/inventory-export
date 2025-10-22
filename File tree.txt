@@ -1,0 +1,13 @@
+shopify-inventory-report/
+├─ package.json
+├─ .gitignore
+├─ .env.example
+├─ shopify.app.toml # optional; for reference / CLI metadata
+├─ server.js
+├─ README.md
+├─ public/
+│ ├─ index.html
+│ └─ app.js
+├─ exports/ # generated CSV/XML (runtime)
+└─ data/
+└─ snapshots/ # optional snapshots (runtime)
