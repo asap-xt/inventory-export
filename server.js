@@ -214,7 +214,15 @@ async function fetchAllProductsAndInventory() {
 
 // Units sold (по поръчки в периода)
 async function fetchUnitsSold(sinceISO, untilISO) {
-  const q = `created_at:>=${sinceISO} created_at:<=${untilISO} financial_status:paid -cancelled_at:*`;
+  // Shopify order search е най-стабилен с чисти дати (YYYY-MM-DD)
+  const toDateOnly = (s) => (s || '').split('T')[0];
+
+  const sinceDate = toDateOnly(sinceISO);
+  const untilDate = toDateOnly(untilISO);
+
+  // Пример: created_at:>=2025-10-01 created_at:<=2025-10-31
+  const q = `created_at:>=${sinceDate} created_at:<=${untilDate} financial_status:paid -cancelled_at:*`;
+
   let cursor = null, hasNext = true;
   const byVariant = new Map();
 
