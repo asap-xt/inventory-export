@@ -11,8 +11,28 @@ const COLUMNS = [
   "units_sold",
 ];
 
-const tzEl = document.getElementById("tz");
-tzEl.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
+// footer timezone
+document.getElementById("tz").textContent =
+  Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// --- Toast helper ---
+function showToast(title, message = "", type = "success", timeoutMs = 3500) {
+  const root = document.getElementById("toast-root");
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.innerHTML = `
+    <div>
+      <h4>${title}</h4>
+      ${message ? `<p>${message}</p>` : ""}
+    </div>
+    <button class="close" aria-label="Close">&times;</button>
+  `;
+  el.querySelector(".close").onclick = () => root.removeChild(el);
+  root.appendChild(el);
+  if (timeoutMs) setTimeout(() => {
+    if (root.contains(el)) root.removeChild(el);
+  }, timeoutMs);
+}
 
 // Build column chips
 const colBar = document.getElementById("columnsBar");
@@ -30,7 +50,6 @@ COLUMNS.forEach((c, i) => {
 // Helpers
 function toISODate(d) {
   if (!d) return "";
-  // accept 01/10/2025, 2025-10-01, etc.
   const s = d.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;        // YYYY-MM-DD
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {               // DD/MM/YYYY
@@ -40,12 +59,10 @@ function toISODate(d) {
   return s;
 }
 function toISODateTime(s) {
-  // allow "YYYY-MM-DDTHH:mm:ssZ" or "DD/MM/YYYY, HH:mm"
   if (!s) return "";
   const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4}),?\s+(\d{2}):(\d{2})$/);
   if (m) {
     const [_, dd, mm, yyyy, HH, MM] = m;
-    // assume local tz → convert to UTC Z
     const dt = new Date(`${yyyy}-${mm}-${dd}T${HH}:${MM}:00`);
     return new Date(dt.getTime() - dt.getTimezoneOffset() * 60000)
       .toISOString()
@@ -58,6 +75,7 @@ function toISODateTime(s) {
 const snapshotForm = document.getElementById("snapshotForm");
 const snapshotLabel = document.getElementById("snapshotLabel");
 const snapshotResult = document.getElementById("snapshotResult");
+
 document.getElementById("snapshotToday").onclick = () => {
   const now = new Date();
   snapshotLabel.value = now.toISOString().slice(0, 10);
@@ -67,21 +85,29 @@ document.getElementById("snapshotStartOfMonth").onclick = () => {
   const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   snapshotLabel.value = first.toISOString().slice(0, 10);
 };
+
 snapshotForm.onsubmit = async (e) => {
   e.preventDefault();
   snapshotResult.textContent = "Working…";
   const label = toISODate(snapshotLabel.value);
   const body = label ? { label } : {};
-  const res = await fetch("/snapshot", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const json = await res.json();
-  if (json.ok) {
-    snapshotResult.innerHTML = `✅ Snapshot <code>${json.label}</code> saved (${json.count} variants).`;
-  } else {
-    snapshotResult.innerHTML = `❌ ${json.error || "Error"}`;
+  try {
+    const res = await fetch("/snapshot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (json.ok) {
+      snapshotResult.innerHTML = `✅ Snapshot <code>${json.label}</code> saved (${json.count} variants).`;
+      showToast("Snapshot created", `Label: ${json.label} · Variants: ${json.count}`, "success");
+    } else {
+      snapshotResult.innerHTML = `❌ ${json.error || "Error"}`;
+      showToast("Snapshot failed", json.error || "Error", "error", 6000);
+    }
+  } catch (err) {
+    snapshotResult.innerHTML = `❌ ${err.message || err}`;
+    showToast("Snapshot failed", String(err.message || err), "error", 6000);
   }
 };
 
@@ -90,6 +116,7 @@ const reportForm = document.getElementById("reportForm");
 const sinceEl = document.getElementById("since");
 const untilEl = document.getElementById("until");
 const startLabelEl = document.getElementById("startLabel");
+const encSel = document.getElementById("encoding");
 const linksEl = document.getElementById("reportLinks");
 const previewEl = document.getElementById("reportPreview");
 
@@ -123,33 +150,46 @@ reportForm.onsubmit = async (e) => {
     columns: selected
   };
 
-  const res = await fetch("/report", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const json = await res.json();
+  try {
+    const res = await fetch("/report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
 
-  if (!json.ok) {
-    linksEl.innerHTML = `❌ ${json.error || "Error"}`;
-    return;
+    if (!json.ok) {
+      linksEl.innerHTML = `❌ ${json.error || "Error"}`;
+      showToast("Report failed", json.error || "Error", "error", 6000);
+      return;
+    }
+
+    const enc = encSel.value || "utf8";
+    const csvUrl = enc === "win1251" && json.csv_win1251 ? json.csv_win1251 : json.csv;
+    const xmlUrl = enc === "win1251" && json.xml_win1251 ? json.xml_win1251 : json.xml;
+
+    linksEl.innerHTML = `
+      ✅ Rows: <strong>${json.rows}</strong> &nbsp;—&nbsp;
+      <a href="${csvUrl}" download>Download CSV</a> &nbsp;|&nbsp;
+      <a href="${xmlUrl}" download>Download XML</a>
+    `;
+
+    // preview table (first 50 rows)
+    const rows = json.sample && json.sample.length ? json.sample : [];
+    if (rows.length) {
+      const cols = body.columns && body.columns.length ? body.columns : COLUMNS;
+      const thead = `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>`;
+      const tbody = `<tbody>${rows.slice(0,50).map(r=>{
+        return `<tr>${cols.map(c=>`<td>${(r[c] ?? "")}</td>`).join("")}</tr>`;
+      }).join("")}</tbody>`;
+      previewEl.innerHTML = `<div class="table-wrap"><table>${thead}${tbody}</table></div>`;
+    } else {
+      previewEl.innerHTML = "";
+    }
+
+    showToast("Report ready", `Rows: ${json.rows}. Pick CSV/XML to download.`, "success");
+  } catch (err) {
+    linksEl.innerHTML = `❌ ${err.message || err}`;
+    showToast("Report failed", String(err.message || err), "error", 6000);
   }
-
-  // links
-  linksEl.innerHTML = `
-    ✅ Rows: <strong>${json.rows}</strong> &nbsp;—&nbsp;
-    <a href="${json.csv}" target="_blank">Download CSV</a> &nbsp;|&nbsp;
-    <a href="${json.xml}" target="_blank">Download XML</a>
-  `;
-
-  // preview table (first 50 rows for speed)
-  const rows = json.sample && json.sample.length ? json.sample : [];
-  if (!rows.length) return;
-
-  const cols = body.columns && body.columns.length ? body.columns : COLUMNS;
-  const thead = `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>`;
-  const tbody = `<tbody>${rows.slice(0,50).map(r=>{
-    return `<tr>${cols.map(c=>`<td>${(r[c] ?? "")}</td>`).join("")}</tr>`;
-  }).join("")}</tbody>`;
-  previewEl.innerHTML = `<div class="table-wrap"><table>${thead}${tbody}</table></div>`;
 };

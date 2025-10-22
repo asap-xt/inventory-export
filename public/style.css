@@ -39,3 +39,44 @@ th,td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:left;fo
 th{background:#f8fafc;font-weight:600}
 .footer{padding-bottom:40px;color:var(--sub)}
 code{background:#f1f5f9;padding:2px 6px;border-radius:6px}
+/* === TOASTS === */
+#toast-root{
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 9999;
+}
+.toast{
+  min-width: 260px;
+  max-width: 420px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-left: 6px solid var(--primary);
+  box-shadow: 0 6px 20px rgba(15,23,42,.15);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  animation: toast-in .18s ease-out;
+}
+.toast h4{
+  margin: 0 0 2px;
+  font-size: 14px;
+}
+.toast p{
+  margin: 0; color: var(--sub); font-size: 13px;
+}
+.toast .close{
+  margin-left: auto; cursor: pointer; border: none; background: transparent; font-size: 18px; line-height: 1;
+  color: #64748b;
+}
+.toast.success{ border-left-color: #22c55e;}
+.toast.error{ border-left-color: #ef4444;}
+@keyframes toast-in{
+  from{ transform: translateY(10px); opacity: 0;}
+  to{ transform: translateY(0); opacity: 1;}
+}

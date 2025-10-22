@@ -60,9 +60,7 @@
           </label>
 
           <div class="row">
-            <div class="chipbar" id="columnsBar">
-              <!-- chips are created by JS -->
-            </div>
+            <div class="chipbar" id="columnsBar"><!-- chips via JS --></div>
           </div>
 
           <div class="actions">
@@ -70,7 +68,14 @@
               <button type="button" id="presetLastMonth" class="btn subtle">Last month</button>
               <button type="button" id="presetThisMonth" class="btn subtle">This month</button>
             </div>
-            <div class="right">
+            <div class="right" style="display:flex; gap:8px; align-items:center;">
+              <label class="field" style="min-width:180px;">
+                <span>Encoding</span>
+                <select id="encoding" class="btn">
+                  <option value="utf8">UTF-8 (Excel with BOM)</option>
+                  <option value="win1251">Windows-1251</option>
+                </select>
+              </label>
               <button type="submit" class="btn primary">Generate</button>
             </div>
           </div>
@@ -85,6 +90,9 @@
   <footer class="container footer">
     <small>Embedded-style UI. Timezone: <code id="tz"></code></small>
   </footer>
+
+  <!-- Toast container -->
+  <div id="toast-root" aria-live="polite" aria-atomic="true"></div>
 
   <script src="/app.js" defer></script>
 </body>
