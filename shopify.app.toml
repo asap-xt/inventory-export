@@ -3,7 +3,7 @@
 
 name = "Inventory Report (Custom)"
 handle = "inventory-report-custom"
-application_url = "https://your-railway-app.up.railway.app/"
+application_url = "https://inventory-export-production.up.railway.app/"
 embedded = true
 
 [access_scopes]
