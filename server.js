@@ -19,31 +19,49 @@ import iconv from 'iconv-lite';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// ===== ENV =====
 const {
   SHOPIFY_SHOP,
   SHOPIFY_ADMIN_TOKEN,
   SHOPIFY_API_VERSION = '2024-10',
   TIMEZONE = 'Europe/Sofia',
-  APP_URL = ''
+  APP_URL = '',
+  SNAPSHOT_DIR: SNAPSHOT_DIR_ENV
 } = process.env;
 
 const PORT = process.env.PORT || 3000;
 
-process.on('uncaughtException', (e) => console.error('[uncaughtException]', e));
-process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
+console.log('[BOOT] Starting Inventory Export app');
+console.log('[BOOT] Config:', {
+  SHOPIFY_SHOP,
+  SHOPIFY_API_VERSION,
+  TIMEZONE,
+  APP_URL,
+  SNAPSHOT_DIR: SNAPSHOT_DIR_ENV || '(default ./data/snapshots)'
+});
 
+if (!SHOPIFY_SHOP || !SHOPIFY_ADMIN_TOKEN) {
+  console.error('[BOOT] Missing SHOPIFY_SHOP or SHOPIFY_ADMIN_TOKEN — API calls will fail!');
+}
+
+// ===== APP & STATIC =====
 const app = express();
 app.use(express.json({ limit: '2mb' }));
+
+// simple request logger (only for our endpoints)
+app.use((req, _res, next) => {
+  if (['/health','/snapshot','/report','/download','/exports'].some(p => req.path.startsWith(p))) {
+    console.log(`[REQ] ${req.method} ${req.path}`);
+  }
+  next();
+});
 
 // Health
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // CSP за вграждане в Shopify Admin
 app.use((_req, res, next) => {
-  res.setHeader(
-    'Content-Security-Policy',
-    'frame-ancestors https://admin.shopify.com https://*.myshopify.com'
-  );
+  res.setHeader('Content-Security-Policy', 'frame-ancestors https://admin.shopify.com https://*.myshopify.com');
   next();
 });
 
@@ -53,11 +71,13 @@ app.use(express.static(PUBLIC_DIR));
 
 // Директории за експорти/снимки
 const EXPORT_DIR = path.join(__dirname, 'exports');
-const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR || path.join(__dirname, 'data', 'snapshots');
+const SNAPSHOT_DIR = SNAPSHOT_DIR_ENV || path.join(__dirname, 'data', 'snapshots');
 fs.mkdirSync(EXPORT_DIR, { recursive: true });
 fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+console.log('[BOOT] EXPORT_DIR:', EXPORT_DIR);
+console.log('[BOOT] SNAPSHOT_DIR:', SNAPSHOT_DIR);
 
-// Помощни функции за време/етикети
+// ===== TIME HELPERS =====
 function labelForTodayTZ(tz = 'UTC') {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'
@@ -77,12 +97,17 @@ function isLastDayOfMonthTZ(tz = 'UTC') {
   return mNow !== mTom;
 }
 
-// Shopify GraphQL helper
-if (!SHOPIFY_SHOP || !SHOPIFY_ADMIN_TOKEN) {
-  console.error('Missing SHOPIFY_SHOP or SHOPIFY_ADMIN_TOKEN');
-}
+// ===== SHOPIFY GRAPHQL =====
 const GQL_URL = `https://${SHOPIFY_SHOP}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
 async function shopifyGraphQL(query, variables = {}) {
+  const opName = (() => {
+    const m = query.match(/\b(query|mutation)\s+([A-Za-z0-9_]+)/);
+    return m ? m[2] : 'UnknownOp';
+  })();
+
+  console.log(`[GQL→] ${opName} vars=`, sanitizeVars(variables));
+  const started = Date.now();
+
   const res = await fetch(GQL_URL, {
     method: 'POST',
     headers: {
@@ -91,14 +116,41 @@ async function shopifyGraphQL(query, variables = {}) {
     },
     body: JSON.stringify({ query, variables })
   });
+
+  let outText = '';
+  try { outText = await res.text(); } catch {}
   let out = {};
-  try { out = await res.json(); } catch {}
-  if (!res.ok) throw new Error(`GraphQL HTTP ${res.status}: ${JSON.stringify(out)}`);
-  if (out.errors) throw new Error(`GraphQL errors: ${JSON.stringify(out.errors)}`);
+  try { out = JSON.parse(outText); } catch {}
+
+  const ms = Date.now() - started;
+  if (!res.ok) {
+    console.error(`[GQL✗] ${opName} HTTP ${res.status} in ${ms}ms body=`, truncate(outText, 1000));
+    throw new Error(`GraphQL HTTP ${res.status}: ${outText}`);
+  }
+  if (out.errors) {
+    console.error(`[GQL✗] ${opName} errors=`, out.errors);
+    throw new Error(`GraphQL errors: ${JSON.stringify(out.errors)}`);
+  }
+
+  // optional: cost logging if present
+  if (out.extensions?.cost) {
+    console.log(`[GQL$] ${opName} cost=`, out.extensions.cost);
+  }
+
+  console.log(`[GQL✓] ${opName} in ${ms}ms`);
   return out.data;
 }
+function truncate(s, n) {
+  if (!s) return s;
+  return s.length > n ? s.slice(0, n) + '…(truncated)' : s;
+}
+function sanitizeVars(v) {
+  try {
+    return JSON.parse(JSON.stringify(v));
+  } catch { return v; }
+}
 
-// GraphQL заявки (съобразени с новия Inventory API)
+// ===== QUERIES =====
 const PRODUCTS_PAGE_QUERY = `
   query ProductsPage($cursor: String, $qtyNames: [String!]!) {
     products(first: 50, after: $cursor) {
@@ -162,22 +214,24 @@ const ORDERS_PAGE_QUERY = `
   }
 `;
 
-// Изтегляне на продукти/варианти и текуща наличност
+// ===== FETCHERS =====
 async function fetchAllProductsAndInventory() {
+  console.log('[INV] Fetching products & inventory…');
   let cursor = null, hasNext = true;
   const rows = [];
+  let page = 0, totalVariants = 0;
 
   while (hasNext) {
+    page++;
     const data = await shopifyGraphQL(PRODUCTS_PAGE_QUERY, {
       cursor,
       qtyNames: ['available']
     });
+
     const { edges, pageInfo } = data.products;
+    console.log(`[INV] Page ${page} products=${edges.length} hasNext=${pageInfo.hasNextPage}`);
 
     for (const { node: p } of edges) {
-      const vendorInvoiceDate = p.vendorInvoiceDate?.value || null;
-      const vendorInvoiceNumber = p.vendorInvoiceNumber?.value || null;
-
       for (const vEdge of p.variants.edges) {
         const v = vEdge.node;
 
@@ -195,72 +249,79 @@ async function fetchAllProductsAndInventory() {
           productId: p.id,
           productTitle: p.title,
           productVendor: p.vendor,
-          vendorInvoiceDate,
-          vendorInvoiceNumber,
+          vendorInvoiceDate: p.vendorInvoiceDate?.value || null,
+          vendorInvoiceNumber: p.vendorInvoiceNumber?.value || null,
           variantId: v.id,
           variantSku: v.sku,
           unitCost: v.inventoryItem?.unitCost?.amount ?? null,
           unitCostCurrency: v.inventoryItem?.unitCost?.currencyCode ?? null,
           endingQty
         });
+        totalVariants++;
       }
     }
 
     hasNext = pageInfo.hasNextPage;
     cursor = pageInfo.endCursor;
   }
+  console.log('[INV] Done. variants(tracked)=', totalVariants, 'rows=', rows.length);
   return rows;
 }
 
-// Units sold (по поръчки в периода)
 async function fetchUnitsSold(sinceISO, untilISO) {
-  // търсим по ЧИСТИ дати и ги слагаме в единични кавички
+  // Използваме само YYYY-MM-DD и range синтаксис "a..b" за order search
   const toDateOnly = (s) => (s || '').split('T')[0];
 
   const sinceDate = toDateOnly(sinceISO);  // YYYY-MM-DD
   const untilDate = toDateOnly(untilISO);  // YYYY-MM-DD
 
-  // стабилен search syntax:
-  // - дати в '…'
-  // - платени
-  // - изключваме отменените по статус
-  const q = `created_at:>='${sinceDate}' created_at:<='${untilDate}' financial_status:paid -status:cancelled`;
+  const q = `created_at:${sinceDate}..${untilDate} financial_status:paid -status:cancelled`;
+  console.log('[ORDERS SEARCH]', q);
 
   let cursor = null, hasNext = true;
   const byVariant = new Map();
+  let page = 0, totalOrders = 0, totalLines = 0;
 
   while (hasNext) {
+    page++;
     const data = await shopifyGraphQL(ORDERS_PAGE_QUERY, { cursor, query: q });
     const { edges, pageInfo } = data.orders;
+    console.log(`[ORD] Page ${page} orders=${edges.length} hasNext=${pageInfo.hasNextPage}`);
 
     for (const { node: o } of edges) {
+      totalOrders++;
       for (const liEdge of o.lineItems.edges) {
         const li = liEdge.node;
+        totalLines++;
         const vId = li.variant?.id || (li.sku ? `SKU:${li.sku}` : null);
         if (!vId) continue;
         byVariant.set(vId, (byVariant.get(vId) || 0) + (li.quantity || 0));
       }
     }
-
     hasNext = pageInfo.hasNextPage;
     cursor = pageInfo.endCursor;
   }
+
+  console.log('[ORD] Done. orders=', totalOrders, 'lines=', totalLines, 'variantsWithSales=', byVariant.size);
   return byVariant;
 }
 
-// Snapshot-и
+// ===== SNAPSHOTS =====
 function snapshotPath(label){ return path.join(SNAPSHOT_DIR, `${label}.json`); }
 async function createSnapshot(label){
+  console.log('[SNAPSHOT] Creating snapshot for label:', label);
   const rows = await fetchAllProductsAndInventory();
   const snap = {};
   for (const r of rows) snap[r.variantId] = (snap[r.variantId] || 0) + (r.endingQty || 0);
-  fs.writeFileSync(snapshotPath(label), JSON.stringify(snap, null, 2));
-  return { count: Object.keys(snap).length, file: `/data/snapshots/${label}.json` };
+  const file = snapshotPath(label);
+  fs.writeFileSync(file, JSON.stringify(snap, null, 2));
+  console.log('[SNAPSHOT] Saved file:', file, 'variants=', Object.keys(snap).length);
+  return { count: Object.keys(snap).length, file: file.replace(__dirname, ''), absPath: file };
 }
 
-// Build/Export
+// ===== BUILD/EXPORT =====
 function buildReportRows(productRows, unitsSoldMap, startSnapshot=null){
-  return productRows.map(r=>{
+  const out = productRows.map(r=>{
     const vKey = r.variantId || (r.variantSku ? `SKU:${r.variantSku}` : null);
     const sold = vKey ? (unitsSoldMap.get(vKey) || 0) : 0;
     const startingQty = (startSnapshot && r.variantId && startSnapshot[r.variantId] !== undefined)
@@ -278,6 +339,8 @@ function buildReportRows(productRows, unitsSoldMap, startSnapshot=null){
       units_sold: sold
     };
   });
+  console.log('[BUILD] Rows built:', out.length);
+  return out;
 }
 function writeCSV(rows, base, columns){
   const defaultFields = [
@@ -290,6 +353,7 @@ function writeCSV(rows, base, columns){
   const csv = new Json2CsvParser({ fields }).parse(rows);
   const file = path.join(EXPORT_DIR, `${base}.csv`);
   fs.writeFileSync(file, csv, 'utf8');
+  console.log('[WRITE] CSV:', file, 'bytes=', fs.statSync(file).size);
   return path.basename(file, '.csv'); // връщаме base name
 }
 function writeXML(rows, base, columns){
@@ -299,10 +363,11 @@ function writeXML(rows, base, columns){
   const xml = create({ version: '1.0' }).ele({ report: { row: mapped }}).end({ prettyPrint: true });
   const file = path.join(EXPORT_DIR, `${base}.xml`);
   fs.writeFileSync(file, xml, 'utf8');
+  console.log('[WRITE] XML:', file, 'bytes=', fs.statSync(file).size);
   return path.basename(file, '.xml'); // връщаме base name
 }
 
-// Download маршрути (с encoding)
+// ===== DOWNLOAD =====
 function safeBase(name) {
   return String(name).replace(/[^a-zA-Z0-9._-]/g, '');
 }
@@ -310,8 +375,12 @@ app.get('/download/csv/:base', (req, res) => {
   const base = safeBase(req.params.base);
   const enc = (req.query.enc || 'utf8').toLowerCase();
   const filePath = path.join(EXPORT_DIR, `${base}.csv`);
-  if (!fs.existsSync(filePath)) return res.status(404).send('File not found');
+  if (!fs.existsSync(filePath)) {
+    console.warn('[DL] CSV not found:', filePath);
+    return res.status(404).send('File not found');
+  }
 
+  console.log('[DL] CSV', { base, enc });
   let csv = fs.readFileSync(filePath, 'utf8');
   let buf;
   if (enc === 'win1251' || enc === 'windows-1251') {
@@ -329,8 +398,12 @@ app.get('/download/xml/:base', (req, res) => {
   const base = safeBase(req.params.base);
   const enc = (req.query.enc || 'utf8').toLowerCase();
   const filePath = path.join(EXPORT_DIR, `${base}.xml`);
-  if (!fs.existsSync(filePath)) return res.status(404).send('File not found');
+  if (!fs.existsSync(filePath)) {
+    console.warn('[DL] XML not found:', filePath);
+    return res.status(404).send('File not found');
+  }
 
+  console.log('[DL] XML', { base, enc });
   let xml = fs.readFileSync(filePath, 'utf8');
   let buf;
   if (enc === 'win1251' || enc === 'windows-1251') {
@@ -344,32 +417,46 @@ app.get('/download/xml/:base', (req, res) => {
   res.send(buf);
 });
 
-// Endpoints
+// ===== ENDPOINTS =====
 app.post('/snapshot', async (req, res)=>{
   try {
+    console.log('[EP/snapshot] body=', req.body);
     const label = (req.body?.label) || labelForTodayTZ(TIMEZONE);
     const out = await createSnapshot(label);
     res.json({ ok:true, label, ...out, path:`/data/snapshots/${label}.json` });
   } catch(e){
-    console.error('[SNAPSHOT]', e);
+    console.error('[SNAPSHOT✗]', e?.stack || String(e));
     res.status(500).json({ ok:false, error:String(e) });
   }
 });
 
 app.post('/report', async (req,res)=>{
   try{
+    console.log('[EP/report] body=', req.body);
     const { since, until, startSnapshotLabel, columns } = req.body||{};
-    if(!since||!until) return res.status(400).json({ ok:false, error:'Missing since/until (ISO)' });
+    if(!since||!until) {
+      console.warn('[EP/report] Missing since/until');
+      return res.status(400).json({ ok:false, error:'Missing since/until (ISO)' });
+    }
 
     const [products, soldMap] = await Promise.all([
       fetchAllProductsAndInventory(),
       fetchUnitsSold(since, until)
     ]);
+    console.log('[REPORT] products rows=', products.length, 'sold variants=', soldMap.size);
 
     let startSnapshot=null;
     if(startSnapshotLabel){
       const p = snapshotPath(startSnapshotLabel);
-      if(fs.existsSync(p)) startSnapshot = JSON.parse(fs.readFileSync(p,'utf8'));
+      if(fs.existsSync(p)) {
+        const raw = fs.readFileSync(p,'utf8');
+        startSnapshot = JSON.parse(raw);
+        console.log('[REPORT] Loaded snapshot', p, 'keys=', Object.keys(startSnapshot).length);
+      } else {
+        console.warn('[REPORT] Snapshot not found:', p);
+      }
+    } else {
+      console.log('[REPORT] No startSnapshotLabel provided');
     }
 
     const rows = buildReportRows(products, soldMap, startSnapshot);
@@ -379,7 +466,7 @@ app.post('/report', async (req,res)=>{
     const csvBase = writeCSV(rows, base, columns);
     const xmlBase = writeXML(rows, base, columns);
 
-    res.json({
+    const payload = {
       ok: true,
       rows: rows.length,
       csv: `/download/csv/${csvBase}?enc=utf8`,
@@ -388,48 +475,57 @@ app.post('/report', async (req,res)=>{
       xml_win1251: `/download/xml/${xmlBase}?enc=win1251`,
       columns: columns && columns.length ? columns : undefined,
       sample: rows.slice(0, 20)
-    });
+    };
+    console.log('[REPORT] Done. files=', { csv: payload.csv, xml: payload.xml });
+    res.json(payload);
   } catch(e){
-    console.error('[REPORT]', e);
+    console.error('[REPORT✗]', e?.stack || String(e));
     res.status(500).json({ ok:false, error:String(e) });
   }
 });
 
-// ---- CRON: 11:59:59 в TIMEZONE (1-во, 10-то, 20-то и последен ден) ----
+// ===== CRON: 11:59:59 в TIMEZONE (1-во, 10-то, 20-то и последен ден) =====
 cron.schedule('59 59 11 1 * *', async () => {
   try {
     const label = labelForTodayTZ(TIMEZONE);
+    console.log('[CRON] (1st) firing for', label);
     await createSnapshot(label);
-    console.log(`[CRON] Snapshot (1st) ${label}`);
-  } catch (e) { console.error('[CRON 1st]', e); }
+    console.log('[CRON] (1st) done');
+  } catch (e) { console.error('[CRON 1st✗]', e?.stack || String(e)); }
 }, { timezone: TIMEZONE });
 
 cron.schedule('59 59 11 10 * *', async () => {
   try {
     const label = labelForTodayTZ(TIMEZONE);
+    console.log('[CRON] (10th) firing for', label);
     await createSnapshot(label);
-    console.log(`[CRON] Snapshot (10th) ${label}`);
-  } catch (e) { console.error('[CRON 10th]', e); }
+    console.log('[CRON] (10th) done');
+  } catch (e) { console.error('[CRON 10th✗]', e?.stack || String(e)); }
 }, { timezone: TIMEZONE });
 
 cron.schedule('59 59 11 20 * *', async () => {
   try {
     const label = labelForTodayTZ(TIMEZONE);
+    console.log('[CRON] (20th) firing for', label);
     await createSnapshot(label);
-    console.log(`[CRON] Snapshot (20th) ${label}`);
-  } catch (e) { console.error('[CRON 20th]', e); }
+    console.log('[CRON] (20th) done');
+  } catch (e) { console.error('[CRON 20th✗]', e?.stack || String(e)); }
 }, { timezone: TIMEZONE });
 
 cron.schedule('59 59 11 28-31 * *', async () => {
   try {
-    if (!isLastDayOfMonthTZ(TIMEZONE)) return;
     const label = labelForTodayTZ(TIMEZONE);
+    if (!isLastDayOfMonthTZ(TIMEZONE)) {
+      console.log('[CRON] (last-of-month) skipped — not last day for', label);
+      return;
+    }
+    console.log('[CRON] (last-of-month) firing for', label);
     await createSnapshot(label);
-    console.log(`[CRON] Snapshot (last-of-month) ${label}`);
-  } catch (e) { console.error('[CRON last-of-month]', e); }
+    console.log('[CRON] (last-of-month) done');
+  } catch (e) { console.error('[CRON last-of-month✗]', e?.stack || String(e)); }
 }, { timezone: TIMEZONE });
 
-// --- Start (host 0.0.0.0 за хостинг платформи) ---
+// ===== START =====
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on :${PORT}`);
   if (APP_URL) console.log(`App URL: ${APP_URL}`);
