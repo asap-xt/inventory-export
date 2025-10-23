@@ -80,3 +80,45 @@ code{background:#f1f5f9;padding:2px 6px;border-radius:6px}
   from{ transform: translateY(10px); opacity: 0;}
   to{ transform: translateY(0); opacity: 1;}
 }
+/* --- Chips block under the description --- */
+.chips-block{
+  margin-top: 10px;
+}
+.chips-title{
+  font-size: 13px;
+  color: var(--sub);
+  margin-bottom: 6px;
+}
+
+/* Horizontal chips with wrapping */
+.chipbar{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+/* Make them compact for two rows on desktop widths */
+@media (min-width: 960px){
+  .chipbar{
+    /* ограничаваме височината ориентировъчно до две „редчета“ */
+    max-height: 76px; /* ~2 реда, зависи от височината на .chip */
+    overflow: auto;   /* ако не се събира, се появява лек scroll */
+  }
+}
+
+/* Optional: по-строен вид на самите 'chip' */
+.chip{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 13px;
+  user-select: none;
+}
+.chip input[type="checkbox"]{
+  width: 16px; height: 16px;
+}
+
