@@ -105,6 +105,7 @@ input[type="date"], input[type="text"], .select{
 
 /* Footer */
 .page-foot{ font-size: 12px; margin: 14px 4px 8px; color: var(--muted); }
+.page-foot .btn{ height:28px; line-height:26px; padding:0 10px; font-size:12px; }
 
 /* Toasts */
 #toast-root{

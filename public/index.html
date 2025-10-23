@@ -101,15 +101,31 @@
     </section>
 
     <footer class="page-foot muted">
-      Embedded-style UI. Timezone: <span id="tz"></span>
-      <!-- Тук можеш да добавиш твоя <form action="/logout" …> Logout -->
-    </footer>
-  </main>
+  Embedded-style UI. Timezone: <span id="tz"></span>
+  <button id="logoutBtn" class="btn subtle" style="height:28px;line-height:26px;font-size:12px;margin-left:10px;">
+    Logout
+  </button>
+</footer>
+</main>
 
-  <!-- Тоаст контейнер -->
-  <div id="toast-root"></div>
+<!-- Toast контейнер -->
+<div id="toast-root"></div>
 
-  <!-- JS (с версия за да не кешира) -->
-  <script src="/app.js?v=4" defer></script>
+<!-- Logout handler (лека POST заявка и редирект към /login) -->
+<script>
+  (function(){
+    const btn = document.getElementById('logoutBtn');
+    if (btn) {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        try { await fetch('/logout', { method: 'POST' }); } catch(e){}
+        location.href = '/login';
+      });
+    }
+  })();
+</script>
+
+<!-- JS (с версия за да не кешира) -->
+<script src="/app.js?v=4" defer></script>
 </body>
 </html>
