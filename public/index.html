@@ -7,111 +7,111 @@
   <link href="/style.css" rel="stylesheet" />
 </head>
 <body>
+  <!-- Top header (единствен) -->
   <header class="app-header">
     <div class="container">
       <h1>Inventory Report</h1>
-      <p class="subtitle">Custom, embedded-style tool for snapshots & reports</p>
+      <p class="subtitle">Custom, embedded-style tool for snapshots &amp; reports</p>
     </div>
   </header>
-  
-  <!-- Snapshot (optional) -->
-  <section class="card">
-    <div class="card-header">
-      <h2>Manual Snapshot <span class="tag optional">optional</span></h2>
-      <p class="muted">
-        Snapshots са моментни снимки на нововъведения инвентар, доставчици и фактури. Правят се <strong>автоматично</strong> на 1-во, 10-то, 20-то число както и в последния ден от месеца в 11:59:59.
-        (<span id="tz"></span>). Тук можеш по желание да създадеш snapshot към конкретна дата> Това се прави, ако е бил въведен инвентар преди деня на следващия snapshot, който трябва да влезе в отчет.
-      </p>
-    </div>
 
-    <form id="snapshotForm" class="form-row">
-      <label class="field md">
-        <span>Snapshot date</span>
-        <input type="date" id="snapshotDate" />
-      </label>
-
-      <div class="grow"></div>
-
-      <div class="btn-row">
-        <button type="button" id="snapshotToday" class="btn subtle">Today</button>
-        <button type="button" id="snapshotStartOfMonth" class="btn subtle">1st of Month</button>
-        <button type="submit" class="btn">Create snapshot</button>
-      </div>
-    </form>
-
-    <div id="snapshotResult" class="result-line"></div>
-  </section>
-
-  <!-- Report -->
-  <section class="card">
-    <div class="card-header">
-      <h2>Generate Report</h2>
-      <p class="muted">
-        Избери дати и полета, които искаш да експортнеш.
-      </p>
-    </div>
-
-    <!-- Columns -->
-    <div class="chips-block">
-      <div class="chips-title">Колони (тикни по избор)</div>
-      <div class="chipbar" id="columnsBar"><!-- chips via JS --></div>
-    </div>
-
-    <!-- Filters -->
-    <form id="reportForm" class="form-grid">
-      <label class="field">
-        <span>Since (date)</span>
-        <input type="date" id="sinceDate" />
-      </label>
-
-      <label class="field">
-        <span>Until (date)</span>
-        <input type="date" id="untilDate" />
-      </label>
-
-      <label class="field">
-        <span>Start snapshot label (optional)</span>
-        <input type="date" id="startLabelDate" />
-      </label>
-
-      <div class="field">
-        <span>Encoding</span>
-        <select id="encoding" class="select">
-          <option value="utf8">UTF-8 (Excel with BOM)</option>
-          <option value="win1251">Windows-1251</option>
-        </select>
+  <main class="container">
+    <!-- Manual Snapshot -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Manual Snapshot <span class="tag optional">optional</span></h2>
+        <p class="muted">
+          Snapshots са моментни снимки на нововъведения инвентар, доставчици и фактури. Правят се
+          <strong>автоматично</strong> на 1-во, 10-то, 20-то и последния ден от месеца в 11:59:59 (Europe/Sofia).
+          Тук можеш по желание да създадеш snapshot към конкретна дата &mdash; ако е бил въведен инвентар
+          преди деня на следващия snapshot, който трябва да влезе в отчет.
+        </p>
       </div>
 
-      <div class="form-actions">
-        <div class="left">
-          <button type="button" id="presetLastMonth" class="btn subtle">Last month</button>
-          <button type="button" id="presetThisMonth" class="btn subtle">This month</button>
+      <form id="snapshotForm" class="form-row">
+        <label class="field md">
+          <span>Snapshot date</span>
+          <input type="date" id="snapshotDate" />
+        </label>
+
+        <div class="grow"></div>
+
+        <div class="btn-row">
+          <button type="button" id="snapshotToday" class="btn subtle">Today</button>
+          <button type="button" id="snapshotStartOfMonth" class="btn subtle">1st of Month</button>
+          <button type="submit" class="btn">Create snapshot</button>
         </div>
-        <div class="right">
-          <button type="submit" class="btn primary">Generate</button>
-        </div>
+      </form>
+
+      <div id="snapshotResult" class="result-line"></div>
+    </section>
+
+    <!-- Generate Report -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Generate Report</h2>
+        <p class="muted">
+          Избери дати <strong>без часове</strong>. Отчетът започва от <em>00:00:01</em> на началната дата и свършва в
+          <em>23:59:59</em> на крайната, а ако крайната е днешна – до момента на генериране.
+        </p>
       </div>
-    </form>
 
-    <div id="reportLinks" class="result-line"></div>
-    <div id="reportPreview" class="table-wrap"></div>
-  </section>
+      <!-- Колони -->
+      <div class="chips-block">
+        <div class="chips-title">Колони (тикни по избор)</div>
+        <div class="chipbar" id="columnsBar"><!-- chips via app.js --></div>
+      </div>
 
-  <footer class="page-foot muted">
-    Embedded-style UI. Timezone: <span id="tz"></span>
-  </footer>
-</main>§
+      <!-- Филтри и действия -->
+      <form id="reportForm" class="form-grid">
+        <label class="field">
+          <span>Since (date)</span>
+          <input type="date" id="sinceDate" />
+        </label>
 
-  <footer class="container footer">
-    <small>Embedded-style UI. Timezone: <code id="tz"></code></small>
-    <form id="logoutForm" method="post" action="/logout" style="display:inline;">
-  <button class="btn subtle" style="height:28px;line-height:26px;font-size:12px;">Logout</button>
-</form>
-  </footer>
+        <label class="field">
+          <span>Until (date)</span>
+          <input type="date" id="untilDate" />
+        </label>
 
-  <!-- Toast container -->
-  <div id="toast-root" aria-live="polite" aria-atomic="true"></div>
+        <label class="field">
+          <span>Start snapshot label (optional)</span>
+          <input type="date" id="startLabelDate" />
+        </label>
 
-  <script src="/app.js" defer></script>
+        <label class="field">
+          <span>Encoding</span>
+          <select id="encoding" class="select">
+            <option value="utf8">UTF-8 (Excel with BOM)</option>
+            <option value="win1251">Windows-1251</option>
+          </select>
+        </label>
+
+        <div class="form-actions">
+          <div class="left">
+            <button type="button" id="presetLastMonth" class="btn subtle">Last month</button>
+            <button type="button" id="presetThisMonth" class="btn subtle">This month</button>
+          </div>
+          <div class="right">
+            <button type="submit" class="btn primary">Generate</button>
+          </div>
+        </div>
+      </form>
+
+      <div id="reportLinks" class="result-line"></div>
+      <div id="reportPreview" class="table-wrap"></div>
+    </section>
+
+    <footer class="page-foot muted">
+      Embedded-style UI. Timezone: <span id="tz"></span>
+      <!-- Тук можеш да добавиш твоя <form action="/logout" …> Logout -->
+    </footer>
+  </main>
+
+  <!-- Тоаст контейнер -->
+  <div id="toast-root"></div>
+
+  <!-- JS (с версия за да не кешира) -->
+  <script src="/app.js?v=4" defer></script>
 </body>
 </html>
