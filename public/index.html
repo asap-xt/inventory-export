@@ -28,8 +28,8 @@
     <div class="card-header">
       <h2>Manual Snapshot <span class="tag optional">optional</span></h2>
       <p class="muted">
-        Snapshots се правят <strong>автоматично</strong> на 1-во, 10-то, 20-то и последния ден в 11:59:59
-        (<span id="tz"></span>). Тук можеш по желание да създадеш snapshot по етикет (YYYY-MM-DD).
+        Snapshots са моментни снимки на нововъведения инвентар, доставчици и фактури. Правят се <strong>автоматично</strong> на 1-во, 10-то, 20-то число както и в последния ден от месеца в 11:59:59.
+        (<span id="tz"></span>). Тук можеш по желание да създадеш snapshot към конкретна дата> Това се прави, ако е бил въведен инвентар преди деня на следващия snapshot, който трябва да влезе в отчет.
       </p>
     </div>
 
@@ -56,8 +56,7 @@
     <div class="card-header">
       <h2>Generate Report</h2>
       <p class="muted">
-        Избери дати <strong>без часове</strong>. Отчетът започва от <em>00:00:01</em> на началната дата и свършва в
-        <em>23:59:59</em> на крайната, а ако крайната е днешна – до момента на генериране.
+        Избери дати и полета, които искаш да експортнеш.
       </p>
     </div>
 
@@ -110,10 +109,13 @@
   <footer class="page-foot muted">
     Embedded-style UI. Timezone: <span id="tz"></span>
   </footer>
-</main>
+</main>§
 
   <footer class="container footer">
     <small>Embedded-style UI. Timezone: <code id="tz"></code></small>
+    <form id="logoutForm" method="post" action="/logout" style="display:inline;">
+  <button class="btn subtle" style="height:28px;line-height:26px;font-size:12px;">Logout</button>
+</form>
   </footer>
 
   <!-- Toast container -->
