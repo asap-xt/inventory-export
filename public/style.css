@@ -122,3 +122,64 @@ code{background:#f1f5f9;padding:2px 6px;border-radius:6px}
   width: 16px; height: 16px;
 }
 
+/* Подравняване на action лентата */
+.actions{
+  display:flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;           /* за да пренася на втори ред при тесни екрани */
+  margin-top: 10px;
+}
+
+/* Лявата група (preset бутони) + дясната група (encoding + Generate) */
+.actions .preset{
+  display:flex;
+  gap:8px;
+  align-items:center;
+}
+.actions .right{
+  display:flex;
+  gap:10px;
+  align-items:center;        /* вертикално центриране с енкодинг селектора */
+}
+
+/* Да изглеждат с еднаква височина */
+.actions .right select.btn,
+.actions .right .btn.primary{
+  height: 36px;
+  line-height: 34px;
+  padding: 0 14px;
+}
+
+/* Изтъняваме label-а на encoding, за да не „повдига“ бутона */
+.actions .right .field{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin:0;
+}
+.actions .right .field > span{
+  font-size: 13px;
+  color: var(--sub);
+}
+
+/* По-добра подредба на средни/малки екрани */
+@media (max-width: 900px){
+  .actions{
+    gap:10px;
+  }
+  .actions .right{
+    margin-left:auto;        /* бута групата вдясно */
+  }
+}
+@media (max-width: 640px){
+  .actions{
+    flex-direction: column;  /* на телефон – подредени вертикално */
+    align-items: stretch;
+  }
+  .actions .right{
+    width:100%;
+    justify-content: flex-end;
+  }
+}
