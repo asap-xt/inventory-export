@@ -4,6 +4,7 @@ const COLUMNS = [
   "vendor_invoice_date",
   "vendor_invoice_number",
   "product_title",
+  "product_type",
   "product_variant_sku",
   "unit_cost",
   "unit_cost_currency",

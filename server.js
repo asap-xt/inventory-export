@@ -245,6 +245,7 @@ const PRODUCTS_PAGE_QUERY = `
           id
           title
           vendor
+          productType
           vendorInvoiceDate: metafield(namespace: "custom", key: "vendor_invoice_date") { value }
           vendorInvoiceNumber: metafield(namespace: "custom", key: "vendor_invoice_number") { value }
           variants(first: 50) {
@@ -354,6 +355,7 @@ async function fetchAllProductsAndInventory() {
           productId: p.id,
           productTitle: p.title,
           productVendor: p.vendor,
+          productType: p.productType,
           vendorInvoiceDate: p.vendorInvoiceDate?.value || null,
           vendorInvoiceNumber: p.vendorInvoiceNumber?.value || null,
           variantId: v.id,
@@ -477,6 +479,7 @@ function buildReportRows(productRows, unitsSoldMap, startSnapshot=null){
       ? startSnapshot[r.variantId] : null;
     return {
       vendor: r.productVendor,
+      product_type: r.productType,
       vendor_invoice_date: r.vendorInvoiceDate,
       vendor_invoice_number: r.vendorInvoiceNumber,
       product_title: r.productTitle,
@@ -494,7 +497,7 @@ function buildReportRows(productRows, unitsSoldMap, startSnapshot=null){
 
 function writeCSV(rows, base, columns){
   const defaultFields = [
-    'vendor','vendor_invoice_date','vendor_invoice_number',
+    'vendor','vendor_invoice_date','vendor_invoice_number','product_type',
     'product_title','product_variant_sku',
     'unit_cost','unit_cost_currency',
     'starting_inventory_qty','ending_inventory_qty','units_sold'
