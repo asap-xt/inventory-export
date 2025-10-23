@@ -230,10 +230,14 @@ async function getDb() {
   mongoDb = mongoClient.db(MONGODB_DB);
   console.log('[MONGO] Connected to', MONGODB_DB);
 
+  // Индекси:
+  // - snapshots_inventory: търсим по label -> добавяме индекс по label (не unique).
+  //   Използваме _id = `${label}|${variantId}`, така че не ни трябва compound unique.
   await mongoDb.collection('snapshots_inventory')
-    .createIndex({ label: 1, variantId: 1 }, { unique: true });
-  await mongoDb.collection('snapshots_meta')
-    .createIndex({ _id: 1 }, { unique: true });
+    .createIndex({ label: 1 });
+
+  // - snapshots_meta: _id вече е уникален по дефиниция — НЕ правим createIndex върху _id
+  //   (това точно чупеше със "The field 'unique' is not valid for an _id index specification")
 
   return mongoDb;
 }
