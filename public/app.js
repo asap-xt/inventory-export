@@ -36,12 +36,12 @@ function showToast(title, message = "", type = "success", timeoutMs = 3500) {
 
 // Build column chips
 const colBar = document.getElementById("columnsBar");
-COLUMNS.forEach((c, i) => {
+CCOLUMNS.forEach((c) => {
   const id = `col_${c}`;
   const wrap = document.createElement("label");
   wrap.className = "chip";
   wrap.innerHTML = `
-    <input type="checkbox" id="${id}" ${i !== 6 ? "checked" : ""}/>
+    <input type="checkbox" id="${id}" checked />
     <span>${c}</span>
   `;
   colBar.appendChild(wrap);

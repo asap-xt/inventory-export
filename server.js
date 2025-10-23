@@ -7,6 +7,7 @@ import cron from 'node-cron';
 import { Parser as Json2CsvParser } from 'json2csv';
 import { create } from 'xmlbuilder2';
 import iconv from 'iconv-lite';
+import { MongoClient } from 'mongodb';
 
 // fetch polyfill (без top-level await)
 (async () => {
@@ -26,7 +27,9 @@ const {
   SHOPIFY_API_VERSION = '2024-10',
   TIMEZONE = 'Europe/Sofia',
   APP_URL = '',
-  SNAPSHOT_DIR: SNAPSHOT_DIR_ENV
+  SNAPSHOT_DIR: SNAPSHOT_DIR_ENV,
+  MONGODB_URI,
+  MONGODB_DB = 'inventory_export'
 } = process.env;
 
 const PORT = process.env.PORT || 3000;
@@ -37,7 +40,8 @@ console.log('[BOOT] Config:', {
   SHOPIFY_API_VERSION,
   TIMEZONE,
   APP_URL,
-  SNAPSHOT_DIR: SNAPSHOT_DIR_ENV || '(default ./data/snapshots)'
+  SNAPSHOT_DIR: SNAPSHOT_DIR_ENV || '(default ./data/snapshots)',
+  MONGODB_DB: MONGODB_URI ? MONGODB_DB : '(no Mongo)'
 });
 
 if (!SHOPIFY_SHOP || !SHOPIFY_ADMIN_TOKEN) {
@@ -69,7 +73,7 @@ app.use((_req, res, next) => {
 const PUBLIC_DIR = path.join(__dirname, 'public');
 app.use(express.static(PUBLIC_DIR));
 
-// Директории за експорти/снимки
+// Директории за експорти/снимки (backup файлове)
 const EXPORT_DIR = path.join(__dirname, 'exports');
 const SNAPSHOT_DIR = SNAPSHOT_DIR_ENV || path.join(__dirname, 'data', 'snapshots');
 fs.mkdirSync(EXPORT_DIR, { recursive: true });
@@ -132,7 +136,6 @@ async function shopifyGraphQL(query, variables = {}) {
     throw new Error(`GraphQL errors: ${JSON.stringify(out.errors)}`);
   }
 
-  // optional: cost logging if present
   if (out.extensions?.cost) {
     console.log(`[GQL$] ${opName} cost=`, out.extensions.cost);
   }
@@ -145,9 +148,7 @@ function truncate(s, n) {
   return s.length > n ? s.slice(0, n) + '…(truncated)' : s;
 }
 function sanitizeVars(v) {
-  try {
-    return JSON.parse(JSON.stringify(v));
-  } catch { return v; }
+  try { return JSON.parse(JSON.stringify(v)); } catch { return v; }
 }
 
 // ===== QUERIES =====
@@ -213,6 +214,29 @@ const ORDERS_PAGE_QUERY = `
     }
   }
 `;
+
+// ===== MONGO (client + indexes) =====
+let mongoClient = null;
+let mongoDb = null;
+
+async function getDb() {
+  if (mongoDb) return mongoDb;
+  if (!MONGODB_URI) {
+    console.warn('[MONGO] No MONGODB_URI configured — falling back to files only.');
+    return null;
+  }
+  mongoClient = new MongoClient(MONGODB_URI, { maxPoolSize: 5 });
+  await mongoClient.connect();
+  mongoDb = mongoClient.db(MONGODB_DB);
+  console.log('[MONGO] Connected to', MONGODB_DB);
+
+  await mongoDb.collection('snapshots_inventory')
+    .createIndex({ label: 1, variantId: 1 }, { unique: true });
+  await mongoDb.collection('snapshots_meta')
+    .createIndex({ _id: 1 }, { unique: true });
+
+  return mongoDb;
+}
 
 // ===== FETCHERS =====
 async function fetchAllProductsAndInventory() {
@@ -308,15 +332,62 @@ async function fetchUnitsSold(sinceISO, untilISO) {
 
 // ===== SNAPSHOTS =====
 function snapshotPath(label){ return path.join(SNAPSHOT_DIR, `${label}.json`); }
+
 async function createSnapshot(label){
   console.log('[SNAPSHOT] Creating snapshot for label:', label);
   const rows = await fetchAllProductsAndInventory();
-  const snap = {};
-  for (const r of rows) snap[r.variantId] = (snap[r.variantId] || 0) + (r.endingQty || 0);
+
+  // агрегирай qty по variantId
+  const snapMap = new Map();
+  for (const r of rows) {
+    const prev = snapMap.get(r.variantId) || 0;
+    snapMap.set(r.variantId, prev + (r.endingQty || 0));
+  }
+  const count = snapMap.size;
+
+  // 1) пиши JSON (бекъп)
   const file = snapshotPath(label);
-  fs.writeFileSync(file, JSON.stringify(snap, null, 2));
-  console.log('[SNAPSHOT] Saved file:', file, 'variants=', Object.keys(snap).length);
-  return { count: Object.keys(snap).length, file: file.replace(__dirname, ''), absPath: file };
+  const asObj = Object.fromEntries(snapMap.entries());
+  fs.writeFileSync(file, JSON.stringify(asObj, null, 2));
+  console.log('[SNAPSHOT] File saved:', file, 'variants=', count);
+
+  // 2) пиши в Mongo (ако е конфигуриран)
+  const db = await getDb();
+  if (db) {
+    const invCol = db.collection('snapshots_inventory');
+    const metaCol = db.collection('snapshots_meta');
+
+    const ops = [];
+    for (const [variantId, qty] of snapMap.entries()) {
+      const _id = `${label}|${variantId}`;
+      ops.push({
+        updateOne: {
+          filter: { _id },
+          update: { $set: { label, variantId, qty } },
+          upsert: true
+        }
+      });
+    }
+    if (ops.length) {
+      console.log('[SNAPSHOT] Mongo bulkWrite start, ops=', ops.length);
+      const res = await invCol.bulkWrite(ops, { ordered: false });
+      console.log('[SNAPSHOT] Mongo bulkWrite ok:', {
+        upserted: res.upsertedCount,
+        modified: res.modifiedCount,
+        matched: res.matchedCount
+      });
+    }
+    await metaCol.updateOne(
+      { _id: label },
+      { $set: { _id: label, createdAt: new Date(), count } },
+      { upsert: true }
+    );
+    console.log('[SNAPSHOT] Mongo meta upsert ok:', { label, count });
+  } else {
+    console.log('[SNAPSHOT] Mongo not configured — file-only snapshot done.');
+  }
+
+  return { count, file: file.replace(__dirname, ''), absPath: file };
 }
 
 // ===== BUILD/EXPORT =====
@@ -354,7 +425,7 @@ function writeCSV(rows, base, columns){
   const file = path.join(EXPORT_DIR, `${base}.csv`);
   fs.writeFileSync(file, csv, 'utf8');
   console.log('[WRITE] CSV:', file, 'bytes=', fs.statSync(file).size);
-  return path.basename(file, '.csv'); // връщаме base name
+  return path.basename(file, '.csv');
 }
 function writeXML(rows, base, columns){
   const mapped = (Array.isArray(columns) && columns.length)
@@ -364,7 +435,7 @@ function writeXML(rows, base, columns){
   const file = path.join(EXPORT_DIR, `${base}.xml`);
   fs.writeFileSync(file, xml, 'utf8');
   console.log('[WRITE] XML:', file, 'bytes=', fs.statSync(file).size);
-  return path.basename(file, '.xml'); // връщаме base name
+  return path.basename(file, '.xml');
 }
 
 // ===== DOWNLOAD =====
@@ -445,15 +516,42 @@ app.post('/report', async (req,res)=>{
     ]);
     console.log('[REPORT] products rows=', products.length, 'sold variants=', soldMap.size);
 
+    // Load start snapshot: Mongo first, then file fallback
     let startSnapshot=null;
     if(startSnapshotLabel){
-      const p = snapshotPath(startSnapshotLabel);
-      if(fs.existsSync(p)) {
-        const raw = fs.readFileSync(p,'utf8');
-        startSnapshot = JSON.parse(raw);
-        console.log('[REPORT] Loaded snapshot', p, 'keys=', Object.keys(startSnapshot).length);
+      const db = await getDb();
+      if (db) {
+        console.log('[REPORT] Loading snapshot from Mongo for', startSnapshotLabel);
+        const invCol = db.collection('snapshots_inventory');
+        const cursor = invCol.find(
+          { label: startSnapshotLabel },
+          { projection: { variantId: 1, qty: 1 } }
+        );
+        startSnapshot = {};
+        let cnt = 0;
+        for await (const doc of cursor) {
+          startSnapshot[doc.variantId] = doc.qty;
+          cnt++;
+        }
+        console.log('[REPORT] Mongo snapshot loaded. entries=', cnt);
+        if (cnt === 0) {
+          console.warn('[REPORT] Mongo snapshot empty for label, will try file:', startSnapshotLabel);
+          startSnapshot = null;
+        }
       } else {
-        console.warn('[REPORT] Snapshot not found:', p);
+        console.log('[REPORT] Mongo not configured — will try file snapshot.');
+      }
+
+      // file fallback
+      if (!startSnapshot) {
+        const p = snapshotPath(startSnapshotLabel);
+        if (fs.existsSync(p)) {
+          const raw = fs.readFileSync(p,'utf8');
+          startSnapshot = JSON.parse(raw);
+          console.log('[REPORT] Loaded snapshot FILE', p, 'keys=', Object.keys(startSnapshot).length);
+        } else {
+          console.warn('[REPORT] Snapshot not found (Mongo+file):', startSnapshotLabel);
+        }
       }
     } else {
       console.log('[REPORT] No startSnapshotLabel provided');
