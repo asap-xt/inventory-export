@@ -6,6 +6,7 @@ const COLUMNS = [
   "product_title",
   "product_type",
   "product_variant_sku",
+  "opening_quantity",
   "unit_cost",
   "unit_cost_currency",
   "starting_inventory_qty",
